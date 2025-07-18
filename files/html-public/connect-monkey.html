@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="fa" dir="ltr">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>sample-app</title>
+
+  <link rel="stylesheet" href="./bootstrap.min.css">
+  <script src="./jquery-3.6.0.min.js"></script>
+  <script src="./bootstrap.bundle.min.js"></script>
+
+  <!-- ============================================================================================================= -->
+  <!-- ========================================= Fix Classes ======================================================= -->
+  <!-- ============================================================================================================= -->
+
+  <script>
+
+    class ElementHandling {
+
+      static refreshInterval
+
+      static defineButtonsHandler(handler) {
+
+        $(document).ready(function () {
+          $("button").click(async function () {
+            let id = $(this).attr("id")
+            handler(id)
+          });
+        });
+
+      }
+
+      static defineAutoRefreshHandler(checkboxId, handler) {
+
+        $(document).ready(function () {
+          $(`#${checkboxId}`).on('change', function () {
+            if ($(this).is(':checked')) {
+              ElementHandling.refreshInterval = setInterval(handler, 1000); // Refresh every 1 second
+            } else {
+              clearInterval(ElementHandling.refreshInterval); // Stop refreshing
+            }
+          });
+        });
+
+      }
+
+    }
+
+    class Dialog {
+
+      static messageBox(title, bodyContent) {
+        var modalHtml = `
+            <div class="modal fade" id="dynamicModal" tabindex="-1" aria-labelledby="modalLabel" aria-hidden="true">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="modalLabel">${title}</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            ${bodyContent}
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        $('body').append(modalHtml);
+        var modalElement = document.getElementById('dynamicModal');
+        var modal = new bootstrap.Modal(modalElement);
+        modal.show();
+        $(modalElement).on('hidden.bs.modal', function () {
+          $(modalElement).remove();
+        });
+      }
+
+      static showPrompt(title = '', placeholder = '') {
+        return new Promise((resolve) => {
+          var modalHtml = `
+              <div class="modal fade" id="promptModal" tabindex="-1" aria-labelledby="modalLabel" aria-hidden="true">
+                  <div class="modal-dialog">
+                      <div class="modal-content">
+                          <div class="modal-header">
+                              <h5 class="modal-title" id="modalLabel">${title}</h5>
+                              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                          </div>
+                          <div class="modal-body">
+                              <textarea class="form-control" rows="5" placeholder="${placeholder}"></textarea>
+                          </div>
+                          <div class="modal-footer">
+                              <button type="button" class="btn btn-primary" id="confirmBtn">OK</button>
+                              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          `;
+          $('body').append(modalHtml);
+          var modal = new bootstrap.Modal(document.getElementById('promptModal'));
+          modal.show();
+          let confirmed = false;
+          $('#promptModal').on('shown.bs.modal', function () {
+            $('#promptModal textarea').focus();
+          });
+          $('#promptModal').on('hidden.bs.modal', function () {
+            $('#promptModal').remove();
+            if (!confirmed) {
+              resolve(null);
+            }
+          });
+          $('#confirmBtn').on('click', function () {
+            const userInput = $('#promptModal textarea').val();
+            confirmed = true;
+            modal.hide();
+            resolve(userInput);
+          });
+        });
+      }
+
+    }
+
+  </script>
+
+  <!-- ============================================================================================================= -->
+  <!-- ========================================= Variable Codes ==================================================== -->
+  <!-- ============================================================================================================= -->
+
+  <script type="text/javascript">
+
+    async function getResponse(route, methodName, ...parameters) {
+      const data = {
+        methodName: methodName,
+        parameters: parameters
+      };
+      const p = new Promise((resolve, reject) => {
+        $.post({
+          url: route,
+          contentType: "application/json",
+          data: JSON.stringify(data),
+          success: (response) => resolve(response),
+          error: () => resolve(undefined)
+        });
+      });
+      return await p;
+    }
+
+    function setInfo(text) {
+      $("#info").text(text)
+    }
+
+    function addLog(message) {
+      const logArea = $("#log");
+      const now = new Date();
+      const formattedDate = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+      logArea.val(logArea.val() + `[${formattedDate}] ${message}\n`);
+      logArea.scrollTop(logArea[0].scrollHeight);
+    }
+
+    ElementHandling.defineButtonsHandler(async (id) => {
+      switch (id) {
+
+        case 'turn-on':
+          {
+            let r = await getResponse('/getResponse', 'monkeyStartColab', 1, 3)
+            addLog(r)
+          }
+          break;
+
+        case 'turn-off':
+          {
+            let r = await getResponse('/getResponse', 'monkeyStopColab', 1, 3)
+            addLog(r)
+          }
+          break;
+
+        case 'refresh-status':
+          {
+            let r = await getResponse('/getResponse', 'monkeyGetStatus', true)
+            if (r) {
+              let { colabStartTime, keepAliveMode } = r
+              if (colabStartTime) {
+                let elapsed = new Date(new Date() - new Date(colabStartTime * 1000)).toISOString().slice(11, 19);
+                $('#time-elapsed').val(elapsed)
+              }
+              const nowTehran = new Date(new Date().getTime() + 3.5 * 60 * 60 * 1000).toISOString().slice(11, 19);
+              $('#last-success').val(nowTehran)
+              $('#keep-alive').prop('checked', keepAliveMode);
+              r = JSON.stringify(r)
+              addLog(r)
+            }
+          }
+          break;
+
+        case 'refresh-page':
+          {
+            // let r = await getResponse('/getResponse', 'monkeyRefreshPage')
+            // addLog(r)
+          }
+          break;
+
+        case 'tmux-output':
+          {
+            let r = await getResponse('/getResponse', 'monkeyGetTmuxOutput')
+            addLog(r)
+          }
+          break;
+
+        case 'restart-tmux':
+          {
+            let r = await getResponse('/getResponse', 'monkeyRestartTmux')
+            addLog(r)
+          }
+          break;
+
+        case 'start-keep':
+          {
+            let r = await getResponse('/getResponse', 'monkeyStartKeepAlive')
+            addLog(r)
+          }
+          break;
+
+        case 'stop-keep':
+          {
+            let r = await getResponse('/getResponse', 'monkeyStopKeepAlive')
+            addLog(r)
+          }
+          break;
+
+      }
+    })
+
+    ElementHandling.defineAutoRefreshHandler('auto-refresh', async () => {
+
+    })
+
+  </script>
+
+</head>
+
+<body>
+
+  <div class="container border border-primary border-2 rounded p-3">
+
+    <div class="row mb-2">
+
+      <div class="d-flex flex-row">
+
+        <div class="btn-group-vertical" role="group" aria-label="Basic example">
+          <button type="button" class="btn btn-outline-dark" id="turn-on">Turn On</button>
+          <button type="button" class="btn btn-outline-dark" id="turn-off">Turn Off</button>
+          <button type="button" class="btn btn-outline-dark" id="start-keep">Start Keep Alive</button>
+          <button type="button" class="btn btn-outline-dark" id="stop-keep">Stop Keep Alive</button>
+        </div>
+
+        <div class="border border-primary rounded ms-2 p-2">
+
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" role="switch" id="keep-alive" />
+            <label class="form-check-label" for="keep-alive">Keep Alive</label>
+          </div>
+
+          <div class="input-group input-group-sm mt-1">
+            <span class="input-group-text" id="inputGroup-sizing-sm">Time Elapsed</span>
+            <input id="time-elapsed" type="text" class="form-control" aria-label="Sizing example input"
+              aria-describedby="inputGroup-sizing-sm">
+          </div>
+
+          <div class="input-group input-group-sm mt-1">
+            <span class="input-group-text" id="inputGroup-sizing-sm">Last Successful Fetch</span>
+            <input id="last-success" type="text" class="form-control" aria-label="Sizing example input"
+              aria-describedby="inputGroup-sizing-sm">
+          </div>
+
+        </div>
+
+        <div class="btn-group-vertical ms-2" role="group" aria-label="Basic example">
+          <button type="button" class="btn btn-outline-dark" id="refresh-status">Refresh Status</button>
+          <button type="button" class="btn btn-outline-dark" id="tmux-output">Get Tmux Output</button>
+          <button type="button" class="btn btn-outline-dark" id="restart-tmux">Restart Tmux</button>
+          <button type="button" class="btn btn-outline-dark" id="refresh-page">Refresh Page</button>
+        </div>
+
+      </div>
+
+    </div>
+
+    <div class="row mb-2">
+
+      <div class="progress m-2" style="width: 98%;">
+        <div id="progress" class="progress-bar bg-primary" role="progressbar" style="width: 0%"></div>
+      </div>
+
+      <div class="input-group mb-2">
+        <span class="input-group-text">Log</span>
+        <textarea class="form-control" id="log" rows="8"></textarea>
+      </div>
+
+    </div>
+
+  </div>
+
+</body>
+
+</html>

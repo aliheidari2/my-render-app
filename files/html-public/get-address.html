@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Colab Address</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  
+  <style>
+    button {
+      margin: 1px;
+    }
+    .connection-status {
+      display: inline-block;
+      font-size: 14px;
+      font-weight: bold;
+    }
+
+    .dot {
+      display: inline-block;
+      height: 10px;
+      width: 10px;
+      margin-right: 5px;
+      border-radius: 50%;
+    }
+
+    .status-text {
+      display: inline-block;
+    }
+
+    /* Green status */
+    .dot-green {
+      background-color: #34c759;
+    }
+
+    /* Yellow status */
+    .dot-yellow {
+      background-color: #ffcc00;
+    }
+
+    /* Red status */
+    .dot-red {
+      background-color: #ff3b30;
+    }
+
+  </style>
+  
+  <script type="text/javascript">
+    
+    let colabNo=1
+
+    function setStatus(status) {
+      var dotElement = $(".connection-status .dot");
+      var statusTextElement = $(".connection-status .status-text");
+
+      switch (status) {
+        case "connected":
+          dotElement.removeClass("dot-yellow dot-red").addClass("dot-green");
+          statusTextElement.text("Connected");
+          break;
+        case "connecting":
+          dotElement.removeClass("dot-green dot-red").addClass("dot-yellow");
+          statusTextElement.text("Connecting...");
+          break;
+        case "disconnected":
+          dotElement.removeClass("dot-green dot-yellow").addClass("dot-red");
+          statusTextElement.text("Disconnected");
+          break;
+        default:
+          break;
+      }
+    }
+    
+    async function tryConnect(){
+      setStatus("connecting");
+      colabNo= await(getResponse('/getResponse','getAliveColab',''))
+      if(!colabNo){
+        colabNo=1
+        setStatus("disconnected");
+      } else {
+        setStatus("connected");
+      }
+    }
+
+    async function getResponse(route, methodName, parameters) {
+      let data = {}
+      data.methodName = methodName
+      data.parameters = parameters
+      let p = new Promise((res, rej) => {
+        $.post(route, {
+          data: JSON.stringify(data)
+        }, (data, status) => {
+          if (status === 'success') {
+            res(data)
+          } else {
+            res(undefined)
+          }
+        });
+      })
+      return await p
+    }
+
+    $(document).ready(() => {
+      
+      $(`#get-address`).click(async (e) => {
+        tryConnect()
+        let password=$('#pass').val()
+        let r=await(getResponse('/getResponse','getColabAddress',{colabNo,password}))
+        if(r.sshIP){
+          $('#address').val(`${r.sshIP} -p ${r.sshPort}`) 
+        } else{
+          $('#address').val(`${r}...`)   
+        }
+        e.preventDefault();
+      });
+
+      $(`#copy-address`).click(async (e) => {
+        let address=$('#address').val()
+        navigator.clipboard.writeText(address);
+        e.preventDefault();
+      });
+
+      $(`#connect`).click(async (e) => {
+        tryConnect()
+        e.preventDefault();
+      });
+
+    });
+
+  </script>
+</head>
+
+<body>
+  
+  <div class="input-group">
+    <span class="input-group-text">Password: </span>
+    <input type="password" class="form-control" id="pass">
+  </div>
+  <div class="input-group">
+    <span class="input-group-text">Address: </span>
+    <input type="text" class="form-control" id="address">
+  </div>
+ 
+  <div class="btn-group-vertical " role="group" aria-label="Vertical button group">
+    <button type="button" id="get-address" class="btn btn-outline-dark">Get Address</button>
+    <button type="button" id="copy-address" class="btn btn-outline-dark">Copy Address</button>
+    <button type="button" id="connect" class="btn btn-outline-dark">Connect</button>
+  </div>
+  
+  <div>
+
+    <div class="connection-status">
+      <span class="dot  dot-yellow"></span>
+      <span class="status-text"></span>
+    </div>
+
+  </div>
+  
+</body>
+
+</html>
