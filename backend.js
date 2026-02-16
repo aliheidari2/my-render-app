@@ -3,6 +3,8 @@ const path = require('path');
 
 const myTCPServerClass = require('./myTCPServerClass')
 const DollarSekkeData = require('./DollarSekkeData')
+const Model = require('./model');
+
 
 class Backend {
 
@@ -14,6 +16,9 @@ class Backend {
     this.dollarSekkeData = new DollarSekkeData()
     this.dollarSekkeData.startFetching()
     this.monkeyID = 'monkey2'
+
+    this.model = new Model()
+    this.model.initialize()
   }
 
   async handlePolling(pollingData, sourceID) {
@@ -207,6 +212,43 @@ class Backend {
         message: `Error deleting file: ${err.message}`
       };
     }
+  }
+
+  // ============================================================================================================= 
+  // ========================================= GTD Tasks ======================================================= 
+  // ============================================================================================================= 
+
+  async importData(data) {
+    let r = await this.model.importData(data)
+    return r
+  }
+
+  async getAllUpdatedData() {
+    let r = await this.model.getAllUpdatedData()
+    return r
+  }
+
+  async getNoDueTasks(tagID = null) {
+    let r = await this.model.getNoDueTasks(tagID)
+    return r
+  }
+
+  async getCurrentTasks(tagID = null, offset = 0) {
+    let r = await this.model.getCurrentTasks(tagID, offset)
+    return r
+  }
+
+  async getTags() {
+    let r = await this.model.getTags()
+    return r
+  }
+
+  async changeTaskType(taskIDs, newType) {
+    await this.model.changeTaskType(taskIDs, newType)
+  }
+
+  async updateStars(newStars) {
+    await this.model.updateStars(newStars)
   }
 
 }

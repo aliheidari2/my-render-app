@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weekly Review</title>
+
+  <link rel="stylesheet" href="./bootstrap.min.css">
+  <link href="./bootstrap-icons.min.css" rel="stylesheet">
+  <!-- <script src="./jquery-3.6.3.min.js"></script> -->
+  <script src="./jquery-3.6.0.min.js"></script>
+  <script src="./bootstrap.bundle.min.js"></script>
+
+  <style>
+    /* Mobile layout */
+    @media (max-width: 768px) {
+      .tab-content {
+        position: fixed;
+        top: 5px;
+        /* tabs height */
+        bottom: 60px;
+        left: 0;
+        right: 0;
+        overflow-y: auto;
+      }
+
+      .mobile-move-btn {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 1030;
+        border-radius: 0;
+        height: 60px;
+      }
+
+      /* Hide desktop arrows */
+      .arrow-buttons {
+        display: none;
+      }
+    }
+
+    /* Desktop layout */
+    @media (min-width: 769px) {
+      .full-height {
+        height: 80vh;
+        overflow-y: auto;
+      }
+
+      .arrow-buttons {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100%;
+      }
+    }
+
+    .checked-item {
+      background-color: rgba(0, 123, 255, 0.1);
+    }
+
+    .circle-btn {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      font-size: 20px;
+      font-weight: bold;
+      line-height: 1;
+      color: #333;
+      background: white;
+      border: 2px solid #ddd;
+      box-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.08),
+        0 6px 20px rgba(0, 0, 0, 0.12);
+
+      /* Center the content nicely */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .text-input {
+      height: 54px;
+      width: 70px;
+      /* you can adjust this */
+      padding: 0 16px;
+      font-size: 16px;
+      color: #333;
+      background: white;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      /* softer rectangle */
+      box-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.08),
+        0 6px 20px rgba(0, 0, 0, 0.12);
+      outline: none;
+    }
+
+    .list-group-item {
+      direction: rtl;
+      text-align: right;
+    }
+  </style>
+
+  <script>
+
+    class TaskManager {
+
+      tasks = [];
+      maxParts = 0;
+      partsLength = 10
+
+      constructor() {
+        this.initialize()
+      }
+
+      async initialize() {
+        this.fillTagInput()
+        this.moveElements()
+        this.initEventListeners();
+        await this.recreateTasksArray()
+        this.renderLists(true)
+      }
+
+      async getResponse(methodName, ...parameters) {
+        const data = {
+          methodName: methodName,
+          parameters: parameters
+        };
+        const p = new Promise((resolve, reject) => {
+          $.post({
+            url: '/getResponse',
+            contentType: "application/json",
+            data: JSON.stringify(data),
+            success: (response) => resolve(response),
+            error: () => resolve(undefined)
+          });
+        });
+        return await p;
+      }
+
+      renderTasks(listId, type) {
+        const list = $(`#${listId}`);
+        list.empty();
+        this.tasks.filter(t => t.type === type).forEach(task => {
+          list.append(`
+        <li class="list-group-item ${task.checked ? 'checked-item' : ''}">
+          <input type="checkbox" class="form-check-input me-2 task-checkbox" data-id="${task.id}" ${task.checked ? 'checked' : ''}>
+          ${task.title}
+        </li>
+      `);
+        });
+      }
+
+      renderAll() {
+        let selectedMode = $('input[name="mode"]:checked').val();
+        if (selectedMode === 'weekly') {
+          $('#left-title').text("Weekly Tasks");
+          $('#right-title').text("Today's Tasks");
+          $('#left-tab').text("Weekly Tasks");
+          $('#right-tab').text("Today's Tasks");
+          $('#move-to-right-mobile').text("Move to Today");
+          $('#move-to-left-mobile').text("Move to Weekly");
+          this.renderTasks('left-list', 'week');
+          this.renderTasks('right-list', 'today');
+          this.renderTasks('left-list-mobile', 'week');
+          this.renderTasks('right-list-mobile', 'today');
+        } else {
+          $('#left-title').text("No Time Tasks");
+          $('#right-title').text("Weekly Tasks");
+          $('#left-tab').text("No Time Tasks");
+          $('#right-tab').text("Weekly Tasks");
+          $('#move-to-right-mobile').text("Move to Weekly");
+          $('#move-to-left-mobile').text("Move to No Time");
+          this.renderTasks('left-list', 'no-time');
+          this.renderTasks('right-list', 'week');
+          this.renderTasks('left-list-mobile', 'no-time');
+          this.renderTasks('right-list-mobile', 'week');
+        }
+      }
+
+      moveChecked(fromType, toType) {
+        this.tasks.forEach(t => {
+          if (t.type === fromType && t.checked) {
+            t.type = toType;
+            t.checked = false;
+          }
+        });
+        this.renderAll();
+      }
+
+      renderMobileList() {
+        let { mode, mobileList } = this.getStatus()
+        $('#left-list').appendTo('#left-panel');
+        $('#right-list').appendTo('#right-panel');
+        if (mode === 'weekly') {
+          if (mobileList === 'W') {
+            $('#left-list').appendTo('#mobile-panel');
+          } else {
+            $('#right-list').appendTo('#mobile-panel');
+          }
+        } else {
+          if (mobileList === 'W') {
+            $('#right-list').appendTo('#mobile-panel');
+          } else {
+            $('#left-list').appendTo('#mobile-panel');
+          }
+        }
+      }
+
+      moveElements() {
+        if ($(window).width() <= 768) {
+          $('#controls').appendTo('#modal-controls-container');
+          this.renderMobileList()
+        } else {
+          $('#controls').appendTo('#desktop-controls-container');
+          $('#left-list').appendTo('#left-panel');
+          $('#right-list').appendTo('#right-panel');
+        }
+      }
+
+      getStatus() {
+        let tagID = $('#tag').val()
+        const mode = $('input[name="mode"]:checked').val();
+        let partNo = Number($('#part-no').val() || 0)
+        let mobileList = $('#toggle-mobile-list').text()
+        return { tagID, mode, partNo, mobileList }
+      }
+
+      async fillTagInput() {
+        let tagData = await this.getResponse('getTags')
+        // Clear existing options except the first one
+        $('#tag').find('option:not(:first)').remove();
+        $.each(tagData, function (index, tag) {
+          $('#tag').append($('<option></option>').val(tag.TagID).text(tag.Title));
+        });
+      }
+
+      async recreateTasksArray(tagID) {
+        let tasksList = await this.getResponse('getNoDueTasks', tagID)
+        for (let task of tasksList) {
+          task.NewType = task.Type
+          task.PartNo = null
+        }
+        this.tasks = tasksList
+      }
+
+      async changeTaskType(taskIDs, newType) {
+        let r = await this.getResponse('changeTaskType', taskIDs, newType)
+        return r
+      }
+
+      applyPartNumbers(filteredList, partsLength) {
+        let p = 1
+        let n = 0
+        for (const task of filteredList) {
+          task.PartNo = p
+          n++;
+          if (n == partsLength) {
+            p++;
+            n = 0;
+          }
+        }
+        this.maxParts = n > 0 ? p : p - 1
+        if (this.maxParts >= 0) {
+          $('#part-no').attr('max', this.maxParts);
+        }
+      }
+
+      transferCheckedItems(fromList, newType) {
+        let { tagID, mode, partNo, mobileList } = this.getStatus()
+        var checkedIds = [];
+        $(`#${fromList}-list .task-checkbox:checked`).each(function () {
+          checkedIds.push($(this).data('id'));
+        });
+        // let newType = (mode === 'weekly') ? 'thisweek' : 'next-actions';
+        this.changeTaskType(checkedIds, newType)
+        for (const task of this.tasks) {
+          if (checkedIds.includes(task.TaskID))
+            task.NewType = newType
+        }
+        this.renderLists(false)
+      }
+
+      getFilteredTaskList(mode, partNo) {
+        let result = []
+        for (let task of this.tasks) {
+          if (task.PartNo !== partNo && partNo !== 0) continue
+          if (mode === 'weekly' && task.NewType === "next-actions") continue
+          if (mode === 'no-time' && task.NewType === "today") continue
+          result.push(task)
+        }
+        return result
+      }
+
+      renderLists(doPatring = true) {
+        let leftList = $(`#left-list`);
+        let rightList = $(`#right-list`);
+        leftList.empty();
+        rightList.empty();
+        const mode = $('input[name="mode"]:checked').val();
+        let part = Number($('#part-no').val() || 0)
+        let taskList = this.getFilteredTaskList(mode, part)
+        if (doPatring)
+          this.applyPartNumbers(taskList, this.partsLength)
+        for (const task of taskList) {
+          let item = `
+            <li class="list-group-item d-flex align-items-center">
+              <label 
+                for="task-${task.TaskID}" 
+                class="form-check-label flex-grow-1 mb-0"
+              >
+                ${task.Title}
+              </label>
+              <input 
+                type="checkbox" 
+                class="form-check-input me-2 task-checkbox" 
+                data-id="${task.TaskID}"
+                id="task-${task.TaskID}"
+              >
+            </li>
+          `
+          if (mode === 'weekly') {
+            if (task.NewType === "thisweek") {
+              if (part == 0 || part == task.PartNo)
+                leftList.append(item);
+            } else if (task.NewType === "today") {
+              if (part == 0 || part == task.PartNo)
+                rightList.append(item);
+            }
+          } else {
+            if (task.NewType === "thisweek") {
+              if (part == 0 || part == task.PartNo)
+                rightList.append(item);
+            } else if (task.NewType === "next-actions") {
+              if (part == 0 || part == task.PartNo)
+                leftList.append(item);
+            }
+          }
+        }
+        if (mode === 'weekly') {
+          $('#left-title').text("Weekly Tasks");
+          $('#right-title').text("Today's Tasks");
+          $('#move-to-right-mobile').text("Move to Today");
+          $('#move-to-left-mobile').text("Move to Weekly");
+        } else {
+          $('#left-title').text("No Time Tasks");
+          $('#right-title').text("Weekly Tasks");
+          $('#move-to-right-mobile').text("Move to Weekly");
+          $('#move-to-left-mobile').text("Move to No Time");
+        }
+      }
+
+      initEventListeners() {
+
+        $('#tag').on('change', async () => {
+          let { tagID, mode } = this.getStatus()
+          await this.recreateTasksArray(tagID)
+          $('input[name="mode"][value="weekly"]').prop('checked', true).trigger('change');
+          this.renderLists(true)
+        });
+
+        $('input[name="mode"]').on('change', async () => {
+          let { tagID, mode } = this.getStatus()
+          $('#toggle-mode').text(mode === 'weekly' ? 'WD' : 'NW');
+          $('#toggle-mobile-list').text(mode === 'weekly' ? 'W' : 'N');
+          $('#part-no').val(0).trigger('change');
+          this.renderLists(true)
+        });
+
+        $('#part-no').on('change', () => {
+          let { tagID, mode, partNo } = this.getStatus()
+          $('#increase-part-no').text(partNo)
+          this.renderLists(false)
+        });
+
+        $('#increase-part-no').on('click', () => {
+          const $btn = $(this);
+          let partNo = Number($('#part-no').val() || 0)
+          if (partNo >= this.maxParts) {
+            $btn.text(0)
+            $('#part-no').val(0).trigger('change');
+          } else {
+            $btn.text(partNo + 1)
+            $('#part-no').val(partNo + 1).trigger('change');
+          }
+        });
+
+        $('#toggle-mode').on('click', () => {
+          let { mode } = this.getStatus()
+          const $weekly = $('#weekly');
+          const $noTime = $('#no-time');
+          if (mode === 'weekly') {
+            $('#toggle-mode').text('NW');
+            $('#toggle-mobile-list').text('N');
+            $noTime.prop('checked', true).trigger('change')
+          } else {
+            $('#toggle-mode').text('NW');
+            $('#toggle-mobile-list').text('W');
+            $weekly.prop('checked', true).trigger('change')
+          }
+        });
+
+        $('#toggle-mobile-list').on('click', () => {
+          let { mode } = this.getStatus()
+          const $btn = $('#toggle-mobile-list')
+          if (mode === 'weekly') {
+            $btn.text($btn.text() === 'W' ? 'D' : 'W')
+          } else {
+            $btn.text($btn.text() === 'W' ? 'N' : 'W')
+          }
+          this.renderMobileList()
+        });
+
+        $('#move-to-right').on('click', () => {
+          let { tagID, mode, partNo, mobileList } = this.getStatus()
+          let newType = (mode === 'weekly') ? 'today' : 'thisweek';
+          this.transferCheckedItems('left', newType)
+        });
+
+        $('#move-to-left').on('click', () => {
+          let { tagID, mode, partNo, mobileList } = this.getStatus()
+          let newType = (mode === 'weekly') ? 'thisweek' : 'next-actions';
+          this.transferCheckedItems('right', newType)
+        });
+
+        $('#parts-length').on('click', async () => {
+          let r = prompt("Enter Part Length", this.partsLength);
+          if (r === null || r.trim() === "" || isNaN(r)) {
+            alert('You must enter a number')
+            return
+          }
+          r = Number(r);
+          this.partsLength = r
+          $('#part-no').val(0).trigger('change');
+          this.renderLists(true)
+        });
+
+        $('#transfer').on('click', async () => {
+          let { tagID, mode, partNo, mobileList } = this.getStatus()
+          let newType, fromList
+          if (mode === 'weekly') {
+            newType = (mobileList === 'W') ? 'today' : 'thisweek';
+            fromList = (mobileList === 'W') ? 'left' : 'right';
+          } else {
+            newType = (mobileList === 'N') ? 'thisweek' : 'next-actions';
+            fromList = (mobileList === 'N') ? 'left' : 'right';
+          }
+          this.transferCheckedItems(fromList, newType)
+        });
+
+        $(window).on('resize', () => this.moveElements());
+
+        $('#parts-count').on('click', () => alert('Parts count functionality not implemented yet.'));
+      }
+
+    }
+
+    // instantiate the class:
+    $(document).ready(function () {
+      const taskManager = new TaskManager();
+    });
+
+  </script>
+
+</head>
+
+<body>
+
+  <div class="container-fluid">
+
+    <!-- Desktop layout: controls container placeholder -->
+    <div id="desktop-controls-container" class="d-none d-md-block mb-2"></div>
+
+    <!-- Desktop Content -->
+    <div class="row d-none d-md-flex">
+      <div class="col-md-5" id="left-panel">
+        <h4 id="left-title">Weekly Tasks</h4>
+        <ul class="list-group full-height" id="left-list"></ul>
+      </div>
+
+      <div class="col-md-2 arrow-buttons">
+        <button class="btn btn-primary mb-2" id="move-to-right">&rarr;</button>
+        <button class="btn btn-primary" id="move-to-left">&larr;</button>
+      </div>
+
+      <div class="col-md-5" id="right-panel">
+        <h4 id="right-title">Today's Tasks</h4>
+        <ul class="list-group full-height" id="right-list"></ul>
+      </div>
+    </div>
+
+    <!-- Mobile Content -->
+
+    <div class="d-md-none" style="margin-bottom: 70px !important;">
+
+      <div id="mobile-panel" class="mb-5">
+        <div id="mobile-list"></div>
+      </div>
+      <div class="mobile-move-btn">
+        <div class="d-flex flex-wrap" style="
+            display: flex; 
+            gap: 12px; 
+            align-items: center; 
+            padding: 1px 1px; 
+            border-radius: 16px; 
+            background: linear-gradient(145deg, #ffffff, #f0f4ff); 
+            border: 2px solid rgba(13, 110, 253, 0.3); 
+            box-shadow: 
+              0 8px 25px rgba(13, 110, 253, 0.15),
+              inset 0 1px 0 rgba(255,255,255,0.7);
+          ">
+          <button class="circle-btn" id="transfer"
+            style="background:#0d6efd; color:white; border:none; box-shadow:0 4px 12px rgba(13,110,253,0.4);">
+            Tr
+          </button>
+          <button class="circle-btn" id="toggle-mode">WD</button>
+          <button class="circle-btn" id="toggle-mobile-list">W</button>
+          <button class="circle-btn" id="increase-part-no">0</button>
+          <button class="circle-btn" data-bs-toggle="modal" data-bs-target="#filterModal" type="button"
+            aria-label="Filters">
+            •••
+          </button>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Filter Modal for Mobile -->
+    <div class="modal fade" id="filterModal" tabindex="-1" aria-labelledby="filterModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="filterModalLabel">Control Settings</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body" id="modal-controls-container">
+            <!-- controls moved here dynamically -->
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Unified Controls (single source) -->
+    <div id="controls" class="mb-2">
+      <div class="d-flex flex-wrap">
+        <div class="input-group me-1 mb-2" style="width: auto;">
+          <span class="input-group-text">Tag:</span>
+          <select class="form-select" id="tag" style="width: 150px;">
+            <option value="" selected>All</option>
+          </select>
+        </div>
+
+        <div class="input-group-text me-1 mb-2">
+          <input class="form-check-input mt-0" type="radio" name="mode" id="weekly" value="weekly" checked>
+          <label class="ms-1 me-2" for="weekly">Weekly</label>
+          <input class="form-check-input mt-0" type="radio" name="mode" id="no-time" value="no-time">
+          <label class="ms-1" for="no-time">No Time</label>
+        </div>
+
+        <div class="input-group me-1 mb-2" style="width: auto;">
+          <span class="input-group-text">Part:</span>
+          <input type="number" class="form-control" id="part-no" value="0" min="0" style="width: 70px;">
+        </div>
+
+        <button id="parts-length" type="button" class="btn btn-secondary mb-2">Parts Lenght</button>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+
+</html>

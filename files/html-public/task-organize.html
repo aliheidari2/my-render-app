@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Organize</title>
+
+  <link rel="stylesheet" href="./bootstrap.min.css">
+  <link href="./bootstrap-icons.min.css" rel="stylesheet">
+  <!-- <script src="./jquery-3.6.3.min.js"></script> -->
+  <script src="./jquery-3.6.0.min.js"></script>
+  <script src="./bootstrap.bundle.min.js"></script>
+
+  <style>
+    /* Mobile layout */
+    @media (max-width: 768px) {
+      .tab-content {
+        position: fixed;
+        top: 5px;
+        /* tabs height */
+        bottom: 60px;
+        left: 0;
+        right: 0;
+        overflow-y: auto;
+      }
+
+      .mobile-move-btn {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 1030;
+        border-radius: 0;
+        height: 60px;
+      }
+
+      /* Hide desktop arrows */
+      .arrow-buttons {
+        display: none;
+      }
+    }
+
+    /* Desktop layout */
+    @media (min-width: 769px) {
+      .full-height {
+        height: 80vh;
+        overflow-y: auto;
+      }
+
+      .arrow-buttons {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100%;
+      }
+    }
+
+    .checked-item {
+      background-color: rgba(0, 123, 255, 0.1);
+    }
+
+    .circle-btn {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      font-size: 20px;
+      font-weight: bold;
+      line-height: 1;
+      color: #333;
+      background: white;
+      border: 2px solid #ddd;
+      box-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.08),
+        0 6px 20px rgba(0, 0, 0, 0.12);
+
+      /* Center the content nicely */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .text-input {
+      height: 54px;
+      width: 70px;
+      /* you can adjust this */
+      padding: 0 16px;
+      font-size: 16px;
+      color: #333;
+      background: white;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      /* softer rectangle */
+      box-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.08),
+        0 6px 20px rgba(0, 0, 0, 0.12);
+      outline: none;
+    }
+
+    .list-group-item {
+      direction: rtl;
+      text-align: right;
+    }
+    
+  </style>
+
+  <script>
+
+    class TaskManager {
+
+      tasks = [];
+      newStars = {}
+      maxParts = 0;
+      partsLength = 10
+
+      constructor() {
+        this.initialize()
+      }
+
+      async initialize() {
+        this.fillTagInput()
+        this.moveElements()
+        this.initEventListeners();
+        await this.recreateTasksArray()
+        this.renderList(true)
+      }
+
+      async getResponse(methodName, ...parameters) {
+        const data = {
+          methodName: methodName,
+          parameters: parameters
+        };
+        const p = new Promise((resolve, reject) => {
+          $.post({
+            url: '/getResponse',
+            contentType: "application/json",
+            data: JSON.stringify(data),
+            success: (response) => resolve(response),
+            error: () => resolve(undefined)
+          });
+        });
+        return await p;
+      }
+
+      moveElements() {
+        if ($(window).width() <= 768) {
+          $('#controls').appendTo('#modal-controls-container');
+          this.renderMobileList()
+        } else {
+          $('#controls').appendTo('#desktop-controls-container');
+          $('#left-list').appendTo('#left-panel');
+          $('#right-list').appendTo('#right-panel');
+        }
+      }
+
+      getStatus() {
+        let tagID = $('#tag').val()
+        const mode = $('input[name="mode"]:checked').val();
+        let partNo = Number($('#part-no').val() || 0)
+        let mobileList = $('#toggle-mobile-list').text()
+        return { tagID, mode, partNo, mobileList }
+      }
+
+      async fillTagInput() {
+        let tagData = await this.getResponse('getTags')
+        // Clear existing options except the first one
+        $('#tag').find('option:not(:first)').remove();
+        $.each(tagData, function (index, tag) {
+          $('#tag').append($('<option></option>').val(tag.TagID).text(tag.Title));
+        });
+      }
+
+      getDayDelay(timestamp) {
+        if (!timestamp)
+          return null
+        let now = Math.floor(Date.now() / 1000)
+        let thisDay = Math.floor((now + 3.5 * 3600) / (3600 * 24))
+        let tsDay = Math.floor((timestamp + 3.5 * 3600) / (3600 * 24))
+        return (thisDay - tsDay)
+      }
+
+      async recreateTasksArray(tagID) {
+        let pValue = {
+          'calendar': 30,
+          'deadline': 20,
+          'due': 10,
+          'everyday': 40,
+          'next-actions': 70,
+          'thisweek': 60,
+          'today': 50,
+        }
+        let tasksList = await this.getResponse('getCurrentTasks', tagID)
+        for (let task of tasksList) {
+          task.DayDelay = this.getDayDelay(task.DueDate)
+          task.PartNo = null
+          task.Priority = task.Type ? pValue[task.Type] : 200
+        }
+        this.tasks = tasksList
+      }
+
+      applyPartNumbers(filteredList, partsLength) {
+        let p = 1
+        let n = 0
+        for (const task of filteredList) {
+          task.PartNo = p
+          n++;
+          if (n == partsLength) {
+            p++;
+            n = 0;
+          }
+        }
+        this.maxParts = n > 0 ? p : p - 1
+
+        if (this.maxParts >= 0) {
+          $('#part-no').attr('max', this.maxParts);
+        }
+      }
+
+      getFilteredTaskList(offset, partNo) {
+        let result = []
+        for (let task of this.tasks) {
+          if (task.DayDelay !== null && task.DayDelay + offset < 0) continue;
+          if (task.PartNo !== partNo && partNo !== 0) continue
+          result.push(task)
+        }
+        result.sort((t1, t2) => {
+          let d1 = (t1.DayDelay === null) ? -1000 : t1.DayDelay
+          let d2 = (t2.DayDelay === null) ? -1000 : t2.DayDelay
+          let s1 = (t1.TaskID in this.newStars) ? this.newStars[t1.TaskID] : t1.Stars
+          let s2 = (t2.TaskID in this.newStars) ? this.newStars[t2.TaskID] : t2.Stars
+          let d = d2 - d1
+          let p = t2.Priority - t1.Priority
+          let s = s2 - s1
+          if (s !== 0) return s
+          if (d !== 0) return d
+          return -p
+        })
+        return result
+      }
+
+      renderList(doPatring = true) {
+        let leftList = $(`#left-list`);
+        leftList.empty();
+        const mode = $('input[name="mode"]:checked').val();
+        let part = $('#part-no').val()
+        let offset = Number($('#offset').val() || 0)
+        let partNo = Number($('#part-no').val() || 0)
+
+        function getBadgeElement(type, dayDelay, offset) {
+          let color, text;
+          if (dayDelay === null) {
+            color = 'success'
+            switch (type) {
+              case 'today':
+                text = 'D'
+                break;
+              case "thisweek":
+                text = 'W'
+                break;
+              default:
+                text = 'N'
+                break;
+            }
+          } else {
+            text = dayDelay + offset
+            color = (text > 3) ? 'danger' : 'warning'
+          }
+          return `<span class="badge rounded-pill bg-${color}">${text}</span>`
+        }
+
+        let taskList = this.getFilteredTaskList(offset, partNo)
+        if (doPatring)
+          this.applyPartNumbers(taskList, this.partsLength)
+        for (const task of taskList) {
+          let { TaskID, Title, Stars, Type, DayDelay } = task
+          Stars = (TaskID in this.newStars) ? this.newStars[TaskID] : Stars
+          let starsElements = ``
+          for (let i = 1; i <= 6; i++) {
+            starsElements += `\n<i class="star text-warning bi bi-star${(i <= Stars) ? '-fill' : ''}" data-value="${i}"></i>`
+          }
+          let item = `
+          <li class="list-group-item" data-id="${TaskID}" data-stars="${Stars}">
+            ${Title}
+            </br>  
+            <span>
+            <i class="star text-warning bi bi-star" data-value="0"></i>
+            ${starsElements}
+            </span>
+            ${getBadgeElement(Type, DayDelay, offset)}
+          </li>
+            `
+
+          leftList.append(item);
+        }
+
+      }
+
+      renderMobileList() {
+        $('#left-list').appendTo('#mobile-panel');
+      }
+
+      initEventListeners() {
+
+        $('#tag').on('change', async () => {
+          let tagID = $('#tag').val()
+          $('#part-no').val(0)
+          await this.recreateTasksArray(tagID)
+          this.renderList(true)
+        });
+
+        $('#offset').on('change', () => {
+          $('#part-no').val(0)
+          let offset = Number($('#offset').val() || 0)
+          $('#increase-offset').text(offset)
+          this.renderList(true)
+        });
+
+        $('#part-no').on('change', () => {
+          let tagID = $('#tag').val()
+          let partNo = Number($('#part-no').val() || 0)
+          $('#increase-part-no').text(partNo)
+          this.renderList(false)
+        });
+
+        $('#increase-part-no').on('click', () => {
+          let partNo = Number($('#part-no').val() || 0)
+          $('#part-no').val((partNo >= this.maxParts) ? 0 : partNo + 1).trigger('change');
+        });
+
+        $('#increase-offset').on('click', () => {
+          let offset = Number($('#offset').val() || 0)
+          $('#offset').val(offset + 1).trigger('change');
+        });
+
+        $('#parts-length').on('click', async () => {
+          let r = prompt("Enter Part Length", this.partsLength);
+          if (r === null || r.trim() === "" || isNaN(r)) {
+            alert('You must enter a number')
+            return
+          }
+          r = Number(r);
+          this.partsLength = r
+          this.renderList(true)
+        });
+
+        $('#refresh , #refresh-mobile').on('click', async () => {
+          this.renderList(false)
+        });
+
+        $('#save , #save-mobile').on('click', async () => {
+          let r = confirm('آیا ستاره ها به روزرسانی شود؟')
+          if (r) {
+            await this.getResponse('updateStars', this.newStars)
+          }
+        });
+
+        // Handle star clicks
+        $(document).on('click', '.star', (event) => {
+          const $star = $(event.currentTarget);
+          var $listItem = $star.closest('.list-group-item');
+          var id = $listItem.data('id');
+          var currentStars = parseInt($listItem.attr('data-stars'));
+          var clickedStarValue = parseInt($star.data('value'));
+          if (clickedStarValue > 0) {
+            $star.removeClass('bi-star').addClass('bi-star-fill');
+          }
+          $star.prevAll().not('[data-value="0"]').removeClass('bi-star').addClass('bi-star-fill'); // Fill previous stars, exclude the zero star
+          $star.nextAll().removeClass('bi-star-fill').addClass('bi-star');
+          $listItem.attr('data-stars', clickedStarValue);
+          this.newStars[id] = clickedStarValue
+        });
+
+        $(window).on('resize', () => this.moveElements());
+
+        $('#parts-count').on('click', () => alert('Parts count functionality not implemented yet.'));
+
+      }
+
+      async test() {
+
+        let tasksList = await this.getResponse('getCurrentTasks')
+        console.log(tasksList);
+
+
+
+
+        // let r = await this.recreateTasksArray(26)
+        // const mode = $('input[name="mode"]:checked').val();
+        // this.applyPartNumbers(mode, 10)
+        // this.renderList()
+        // console.log(r);
+
+        // let newType = 'thisweek'
+        // let taskIDs = [8742, 8746]
+        // let r = await this.getResponse('changeTaskType', taskIDs, newType)
+        // let r = await this.getResponse('getNoDueTasks',2)
+        // console.log(r);
+        // r = await this.getResponse('getTags')
+        // console.log(r);
+      }
+
+    }
+
+    // instantiate the class:
+    $(document).ready(function () {
+      const taskManager = new TaskManager();
+    });
+
+  </script>
+
+</head>
+
+<body>
+
+  <div class="container-fluid">
+
+    <!-- Desktop layout: controls container placeholder -->
+    <div id="desktop-controls-container" class="d-none d-md-block mb-2"></div>
+
+    <!-- Desktop Content -->
+    <div class="row d-none d-md-flex">
+      <div class="col-md-5" id="left-panel">
+        <ul class="list-group full-height" id="left-list"></ul>
+      </div>
+
+    </div>
+
+    <!-- Mobile Content -->
+    <div class="d-md-none" style="margin-bottom: 70px !important;">
+      <div id="mobile-panel">
+        <div id="mobile-list"></div>
+      </div>
+      <div class="d-flex flex-wrap mobile-move-btn" style="
+            display: flex; 
+            gap: 12px; 
+            align-items: center; 
+            padding: 1px 1px; 
+            border-radius: 16px; 
+            background: linear-gradient(145deg, #ffffff, #f0f4ff); 
+            border: 2px solid rgba(13, 110, 253, 0.3); 
+            box-shadow: 
+              0 8px 25px rgba(13, 110, 253, 0.15),
+              inset 0 1px 0 rgba(255,255,255,0.7);
+          ">
+        <button class="circle-btn" id="save-mobile"
+          style="background:#0d6efd; color:white; border:none; box-shadow:0 4px 12px rgba(13,110,253,0.4);">
+          S
+        </button>
+        <button class="circle-btn" id="increase-part-no">0</button>
+        <button class="circle-btn" id="increase-offset">0</button>
+        <button class="circle-btn" id="refresh-mobile">R</button>
+        <button class="circle-btn" data-bs-toggle="modal" data-bs-target="#filterModal" type="button"
+          aria-label="Filters">
+          •••
+        </button>
+
+      </div>
+    </div>
+
+    <!-- Filter Modal for Mobile -->
+    <div class="modal fade" id="filterModal" tabindex="-1" aria-labelledby="filterModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="filterModalLabel">Control Settings</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body" id="modal-controls-container">
+            <!-- controls moved here dynamically -->
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Unified Controls (single source) -->
+    <div id="controls" class="mb-2">
+      <div class="d-flex flex-wrap">
+        <div class="input-group me-1 mb-2" style="width: auto;">
+          <span class="input-group-text">Tag:</span>
+          <select class="form-select" id="tag" style="width: 150px;">
+            <option value="" selected>All</option>
+          </select>
+        </div>
+
+        <div class="input-group me-1 mb-2" style="width: auto;">
+          <span class="input-group-text">Offset:</span>
+          <input type="number" class="form-control" id="offset" value="0" style="width: 70px;">
+        </div>
+
+        <div class="input-group me-1 mb-2" style="width: auto;">
+          <span class="input-group-text">Part:</span>
+          <input type="number" class="form-control" id="part-no" value="0" min="0" style="width: 70px;">
+        </div>
+
+        <button id="refresh" type="button" class="btn btn-secondary mb-2 me-1">Refresh</button>
+        <button id="save" type="button" class="btn btn-primary mb-2 me-1">Save</button>
+        <button id="parts-length" type="button" class="btn btn-secondary mb-2 ms-5">Parts Lenght</button>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+
+</html>
