@@ -16,7 +16,7 @@ class DollarSekkeData {
     return this.data
   }
 
-  async startFetching(interval=5000) {
+  async startFetching(interval = 5000) {
     let delay = ms => new Promise(res => setTimeout(res, ms));
     while (true) {
       this.fetchDollarAndSekke()

@@ -6,7 +6,7 @@ class ExpressClass {
     this.app = express();
     this.methods = {};
     this.staticPath = null;
-    this.app.use(express.json({ limit: '50mb' }));
+    this.app.use(express.json({ limit: '100mb' }));
   }
 
   setStaticFilesPath(staticPath) {
@@ -25,11 +25,7 @@ class ExpressClass {
     this.app.post(route, async (req, res) => {
       try {
         const result = await callback(req.body);
-        if (typeof result !== 'string') {
-          res.json(result);
-        } else {
-          res.send(result);
-        }
+        res.json(result);
       } catch (error) {
         console.error(`Route error: ${error}`);
         res.status(500).send('Internal Server Error');
@@ -85,7 +81,7 @@ class ExpressClass {
   static startServer(
     port = 5000,
     backendInstance,
-    staticFilesPath = './static',
+    staticFilesPath = './files/static',
     mainHtml = 'index.html',
     requestRoute = '/getResponse',
   ) {
